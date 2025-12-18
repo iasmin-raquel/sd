@@ -1,0 +1,33 @@
+# CDN P2P - Algoritmos de Política de Cache Cooperativo
+# Projeto de Sistemas Distribuídos - UFAPE
+
+# Framework Web para API dos peers
+Flask==3.0.0
+Werkzeug==3.0.1
+
+# Cliente HTTP para comunicação entre peers
+requests==2.31.0
+
+# Biblioteca para colorir output no terminal (opcional, mas útil para logs)
+colorama==0.4.6
+
+# Dependências auxiliares (já vem com Flask/requests, mas explicitando)
+click>=8.1.7
+itsdangerous>=2.1.2
+Jinja2>=3.1.2
+MarkupSafe>=2.1.3
+certifi>=2023.7.22
+charset-normalizer>=3.3.2
+idna>=3.4
+urllib3>=2.0.7
+
+# Para análise de métricas (caso vocês implementem depois)
+# numpy==1.26.2
+# pandas==2.1.4
+# matplotlib==3.8.2
+# seaborn==0.13.0
+
+# Para simulação avançada (caso vocês implementem depois)
+# simpy==4.1.1
+# networkx==3.2.1
+# scipy==1.11.4
