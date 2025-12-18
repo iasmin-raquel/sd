@@ -9,8 +9,8 @@ import time
 import random
 import statistics
 from collections import defaultdict
-import subprocess
-import sys
+import os
+import glob
 
 # Configuração
 PEERS = {
@@ -20,11 +20,9 @@ PEERS = {
 }
 
 FILES = [
-    'video1.mp4',
-    'video2.mp4',
+    'imagem1.jpg',
+    'imagem2.jpg',
 ]
-
-# NOTA: Teste-SD.png removido por causar timeout
 
 
 class PolicyComparator:
@@ -41,15 +39,24 @@ class PolicyComparator:
     def clear_all_caches(self):
         """Limpa caches de todos os peers"""
         print("\n🧹 Limpando caches...")
-        try:
-            subprocess.run(['python3', 'clear_cache.py'], 
-                          capture_output=True, check=True)
-            time.sleep(1)  # Aguarda limpeza
-            print("✓ Caches limpos!\n")
-        except:
-            print("⚠️  Não foi possível limpar automaticamente")
-            print("Execute manualmente: python3 clear_cache.py\n")
-            input("Pressione ENTER após limpar os caches...")
+        
+        cleared = 0
+        
+        for peer in ['peer1', 'peer2', 'peer3']:
+            cache_dir = f'{peer}/cache'
+            if os.path.exists(cache_dir):
+                # Remove todos os arquivos do cache
+                cache_files = glob.glob(f'{cache_dir}/*')
+                for f in cache_files:
+                    if os.path.isfile(f):
+                        try:
+                            os.remove(f)
+                            cleared += 1
+                        except Exception as e:
+                            print(f"  ⚠️  Erro ao remover {f}: {e}")
+        
+        print(f"✓ {cleared} arquivo(s) removido(s) dos caches!\n")
+        time.sleep(1)
     
     def request_file(self, peer_name, file_name):
         """Faz requisição e mede latência"""
@@ -58,7 +65,7 @@ class PolicyComparator:
         
         try:
             start = time.time()
-            response = requests.get(url, timeout=10)
+            response = requests.get(url, timeout=30)  # 30 segundos para imagens
             latency = (time.time() - start) * 1000  # em ms
             
             if response.status_code == 200:
@@ -80,6 +87,7 @@ class PolicyComparator:
             else:
                 return False, latency, False
         except Exception as e:
+            print(f"    ⚠️  Erro ao requisitar {file_name} de {peer_name}: {e}")
             return False, 0, False
     
     def print_comparison_table(self):
@@ -142,7 +150,7 @@ class PolicyComparator:
 def test_sequential_access():
     """Teste 1: Acesso Sequencial
     
-    Padrão: arquivo1 → arquivo2 → arquivo3 → arquivo4 → arquivo5
+    Padrão: arquivo1 → arquivo2 → arquivo1 → arquivo2 (repete)
     
     Expectativa: LRU deve performar bem (remove o mais antigo)
     """
@@ -151,15 +159,15 @@ def test_sequential_access():
     print("=" * 80)
     print("Descrição: Acessa arquivos em ordem sequencial")
     print("Cache Size: 2 arquivos")
-    print("Padrão: video1 → video2 → video3 → video4 → video5")
+    print(f"Padrão: {' → '.join(FILES)} (repetido)")
     print("\nExpectativa: LRU deve ter melhor desempenho")
     print("-" * 80)
     
     comp = PolicyComparator()
     comp.clear_all_caches()
     
-    # Sequência de acessos
-    sequence = FILES * 2  # Repete 2x para ter mais dados
+    # Sequência de acessos - repete os arquivos várias vezes
+    sequence = FILES * 5  # Repete 5x para ter dados suficientes
     
     print("\nExecutando requisições sequenciais...")
     for i, file_name in enumerate(sequence, 1):
@@ -180,37 +188,36 @@ def test_sequential_access():
 def test_repeated_access():
     """Teste 2: Acesso com Reuso Frequente
     
-    Padrão: arquivo1 usado 5x, outros arquivos usados 1x
+    Padrão: arquivo1 usado frequentemente, arquivo2 usado raramente
     
     Expectativa: LFU deve performar melhor (mantém o mais frequente)
     """
     print("\n" + "=" * 80)
     print("TESTE 2: PADRÃO DE ACESSO COM REUSO FREQUENTE")
     print("=" * 80)
-    print("Descrição: Um arquivo é muito popular, outros são raros")
+    print("Descrição: Um arquivo é muito popular, outro é raro")
     print("Cache Size: 2 arquivos")
-    print("Padrão: video1 (5x) >> video2, video3, video4, video5 (1x cada)")
+    print(f"Padrão: {FILES[0]} aparece 70% das vezes")
     print("\nExpectativa: LFU deve ter melhor desempenho")
     print("-" * 80)
     
     comp = PolicyComparator()
     comp.clear_all_caches()
     
-    # Sequência: video1 é muito acessado
+    # Sequência: primeiro arquivo é muito acessado (70%), segundo é raro (30%)
     sequence = []
-    popular_file = 'video1.txt'
+    num_requests = 20
     
-    for _ in range(3):  # 3 rodadas
-        sequence.append(popular_file)  # Arquivo popular
-        for other_file in [f for f in FILES if f != popular_file]:
-            sequence.append(other_file)  # Outros arquivos
-            sequence.append(popular_file)  # Volta pro popular
+    for _ in range(num_requests):
+        if random.random() < 0.7:
+            sequence.append(FILES[0])  # Arquivo popular
+        else:
+            sequence.append(FILES[1])  # Arquivo raro
     
-    random.shuffle(sequence)  # Embaralha mas mantém frequências
-    
-    print(f"\nArquivo popular: {popular_file}")
+    print(f"\nArquivo popular: {FILES[0]}")
     print(f"Total de requisições: {len(sequence)}")
-    print(f"Frequência de {popular_file}: {sequence.count(popular_file)}/{len(sequence)}")
+    print(f"Frequência de {FILES[0]}: {sequence.count(FILES[0])}/{len(sequence)} "
+          f"({sequence.count(FILES[0])/len(sequence)*100:.0f}%)")
     
     print("\nExecutando requisições com reuso...")
     for i, file_name in enumerate(sequence, 1):
@@ -226,10 +233,10 @@ def test_repeated_access():
     
     # Estatísticas extras
     print("\n📈 ANÁLISE DE FREQUÊNCIA:")
-    print(f"Arquivo popular ({popular_file}): {sequence.count(popular_file)} acessos")
     for file in FILES:
-        if file != popular_file:
-            print(f"Arquivo raro ({file}): {sequence.count(file)} acessos")
+        count = sequence.count(file)
+        pct = (count / len(sequence)) * 100
+        print(f"{file}: {count} acessos ({pct:.1f}%)")
     
     return comp.results
 
@@ -237,19 +244,19 @@ def test_repeated_access():
 def test_regional_popularity():
     """Teste 3: Popularidade Regional
     
-    Padrão: Alguns arquivos são "populares" na região
+    Padrão: Arquivo 1 é "popular" na região (70%), arquivo 2 menos (30%)
     
     Expectativa: GREEN deve performar melhor (prioriza por região)
     
-    NOTA: Este teste é conceitual porque a implementação atual do GREEN
-    não usa informação regional real, mas simula o conceito.
+    NOTA: Com apenas 2 arquivos e cache=2, todas as políticas terão 
+    desempenho similar. Este teste é mais conceitual.
     """
     print("\n" + "=" * 80)
     print("TESTE 3: PADRÃO DE POPULARIDADE REGIONAL")
     print("=" * 80)
     print("Descrição: Arquivos têm popularidades diferentes por região")
     print("Cache Size: 2 arquivos")
-    print("Padrão: 70% requisições em 2 arquivos 'regionais', 30% em outros")
+    print("Padrão: 70% requisições em arquivo 'regional', 30% em outro")
     print("\nExpectativa: GREEN deveria ter melhor desempenho")
     print("(conceitual - implementação atual é simplificada)")
     print("-" * 80)
@@ -257,19 +264,15 @@ def test_regional_popularity():
     comp = PolicyComparator()
     comp.clear_all_caches()
     
-    # Arquivos "populares" na região
-    regional_files = ['video1.txt', 'video2.txt']
-    other_files = [f for f in FILES if f not in regional_files]
-    
-    # 70% requisições nos arquivos regionais, 30% nos outros
+    # 70% requisições no primeiro arquivo (popular), 30% no segundo
     sequence = []
     for _ in range(20):
         if random.random() < 0.7:
-            sequence.append(random.choice(regional_files))
+            sequence.append(FILES[0])  # Regional popular
         else:
-            sequence.append(random.choice(other_files))
+            sequence.append(FILES[1])  # Menos popular
     
-    print(f"\nArquivos regionais populares: {regional_files}")
+    print(f"\nArquivo regional popular: {FILES[0]}")
     print(f"Total de requisições: {len(sequence)}")
     
     print("\nExecutando requisições com viés regional...")
@@ -286,15 +289,11 @@ def test_regional_popularity():
     
     # Estatísticas de distribuição
     print("\n📈 DISTRIBUIÇÃO DE ACESSOS:")
-    for file in regional_files:
+    for file in FILES:
         count = sequence.count(file)
         pct = (count / len(sequence)) * 100
-        print(f"Regional ({file}): {count} acessos ({pct:.1f}%)")
-    
-    for file in other_files:
-        count = sequence.count(file)
-        pct = (count / len(sequence)) * 100
-        print(f"Outros ({file}): {count} acessos ({pct:.1f}%)")
+        status = "Regional popular" if file == FILES[0] else "Menos popular"
+        print(f"{file} ({status}): {count} acessos ({pct:.1f}%)")
     
     return comp.results
 
@@ -302,29 +301,28 @@ def test_regional_popularity():
 def test_random_workload():
     """Teste 4: Workload Aleatório (Realista)
     
-    Padrão: Mix de todos os padrões anteriores
+    Padrão: Mix de acessos com viés (Zipf)
     
     Expectativa: Descobre qual política é mais robusta
     """
     print("\n" + "=" * 80)
     print("TESTE 4: WORKLOAD ALEATÓRIO (REALISTA)")
     print("=" * 80)
-    print("Descrição: Mix de padrões sequenciais, frequentes e regionais")
+    print("Descrição: Mix de padrões com distribuição Zipf")
     print("Cache Size: 2 arquivos")
-    print("Padrão: Aleatório com viés de Zipf (alguns arquivos mais populares)")
+    print("Padrão: Aleatório com viés (alguns arquivos mais populares)")
     print("\nExpectativa: Teste de robustez - qual política é mais versátil?")
     print("-" * 80)
     
     comp = PolicyComparator()
     comp.clear_all_caches()
     
-    # Distribuição Zipf simplificada: alguns arquivos mais populares
-    weights = [5, 3, 2, 1, 1]  # video1 é 5x mais popular que video5
-    
+    # Distribuição com pesos: primeiro arquivo 3x mais popular
+    weights = [3, 1]
     sequence = random.choices(FILES, weights=weights, k=30)
     
     print(f"\nTotal de requisições: {len(sequence)}")
-    print("Distribuição esperada: Zipf (poucos arquivos muito populares)")
+    print("Distribuição: Primeiro arquivo é 3x mais popular")
     
     print("\nExecutando workload aleatório...")
     for i, file_name in enumerate(sequence, 1):
@@ -354,21 +352,6 @@ def test_random_workload():
     return comp.results
 
 
-def test_cache_size_impact():
-    """Teste BONUS: Impacto do Tamanho do Cache
-    
-    NOTA: Requer modificar CACHE_SIZE nos peers manualmente
-    """
-    print("\n" + "=" * 80)
-    print("TESTE BONUS: IMPACTO DO TAMANHO DO CACHE")
-    print("=" * 80)
-    print("⚠️  Este teste requer modificação manual do CACHE_SIZE")
-    print("Edite peer*/app.py e mude CACHE_SIZE para diferentes valores")
-    print("Exemplo: CACHE_SIZE=1, CACHE_SIZE=3, CACHE_SIZE=5")
-    print("\nNão implementado no script automático.")
-    print("=" * 80)
-
-
 def compare_all_policies():
     """Executa todos os testes e gera relatório final"""
     print("\n" + "╔" + "=" * 78 + "╗")
@@ -377,14 +360,29 @@ def compare_all_policies():
     
     # Verifica se peers estão online
     print("\n🔍 Verificando peers...")
+    all_online = True
     for peer_name, peer_info in PEERS.items():
         try:
-            response = requests.get(f"{peer_info['url']}/file/video1.txt", timeout=2)
-            print(f"  ✓ {peer_name} ({peer_info['policy']}): Online")
+            # Testa com arquivo que existe
+            response = requests.get(f"{peer_info['url']}/file/{FILES[0]}", timeout=5)
+            if response.status_code in [200, 404]:
+                print(f"  ✓ {peer_name} ({peer_info['policy']}): Online")
+            else:
+                print(f"  ✗ {peer_name} ({peer_info['policy']}): Resposta estranha")
+                all_online = False
         except:
             print(f"  ✗ {peer_name} ({peer_info['policy']}): OFFLINE")
-            print("\n❌ ERRO: Todos os peers precisam estar rodando!")
-            return
+            all_online = False
+    
+    if not all_online:
+        print("\n❌ ERRO: Todos os peers precisam estar rodando!")
+        print("Execute em terminais separados:")
+        print("  python3 peer1/app.py")
+        print("  python3 peer2/app.py")
+        print("  python3 peer3/app.py")
+        return
+    
+    print("\n✓ Todos os peers estão online!")
     
     # Executa todos os testes
     all_results = {}
@@ -441,9 +439,10 @@ def compare_all_policies():
         wins = victories[policy]
         print(f"  {policy}: {wins} vitória(s)")
     
-    overall_winner = max(victories.items(), key=lambda x: x[1])
-    print(f"\n🥇 POLÍTICA MAIS ROBUSTA: {overall_winner[0]} "
-          f"({overall_winner[1]} vitórias)")
+    if victories:
+        overall_winner = max(victories.items(), key=lambda x: x[1])
+        print(f"\n🥇 POLÍTICA MAIS ROBUSTA: {overall_winner[0]} "
+              f"({overall_winner[1]} vitórias)")
     print("=" * 80)
 
 
@@ -454,14 +453,19 @@ def main():
     print("╚════════════════════════════════════════════════════════════╝")
     print()
     
+    # Aviso sobre limitação com 2 arquivos
+    print("⚠️  NOTA: Com apenas 2 arquivos e cache=2, os testes são limitados.")
+    print("   Para melhores resultados, adicione mais arquivos em origin/files/")
+    print("   e atualize a lista FILES no início deste script.\n")
+    
     while True:
         print("\n" + "=" * 60)
         print("MENU DE TESTES COMPARATIVOS")
         print("=" * 60)
-        print("1. Teste Sequencial (LRU deveria vencer)")
-        print("2. Teste de Reuso Frequente (LFU deveria vencer)")
-        print("3. Teste Regional (GREEN deveria vencer)")
-        print("4. Teste Aleatório (robustez)")
+        print("1. Teste Sequencial")
+        print("2. Teste de Reuso Frequente")
+        print("3. Teste Regional (conceitual)")
+        print("4. Teste Aleatório")
         print("5. 🔥 EXECUTAR TODOS + RELATÓRIO COMPLETO")
         print("0. Sair")
         print()

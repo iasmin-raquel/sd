@@ -31,7 +31,7 @@ def getf(f):
         return send_file(cp(f))
     for p,u in PEERS.items():
         try:
-            r=requests.get(u+'/file/'+f,timeout=1)
+            r=requests.get(u+'/file/'+f,timeout=10)
             if r.status_code==200:
                 print(f"[{PEER_NAME}] ACERTO REMOTO (recebido de {p}) -> {f}")
                 open(cp(f),'wb').write(r.content)
